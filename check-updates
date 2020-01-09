@@ -1,0 +1,16 @@
+#!/bin/bash
+function exitnotif(){ sudo -u "${username}" DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 notify-send -t 299000 'Arch Update Tracker' "${1}"; exit; }
+
+username='blackcat'
+dbpath=/var/lib/pacman
+[[ -d "${dbpath}" ]] || exitnotif "${dbpath} not found"
+tmpdb="$(find /dev/shm/ -type l -lname "${dbpath}/local" -printf '%h' -quit)"
+
+[[ ! -w "${tmpdb}" ]] && {
+	tmpdb="$(mktemp -d -p /dev/shm/)" || exitnotif 'Could not create tmp folder'
+	ln -s "${dbpath}/local" "${tmpdb}" || exitnotif "Could not link ${tmpdb} to ${dbpath}/local"
+}
+
+fakeroot -- yay -Syyb "${tmpdb}" --logfile /dev/null &>/dev/null
+updates="$(yay -Qub "${tmpdb}" 2>/dev/null)" || exitnotif "${tmpdb} database has an issue"
+[[ -n "$updates" ]] && exitnotif "${updates}"
