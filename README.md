@@ -3,3 +3,9 @@ This short script is a replacement for aarchup - an update checking daemon with 
 
 # Installation
 Just download and add the script to a root cronjob (cronie), and change the username variable in the script. It requires yay, which provides AUR update checks as well.
+
+# Dependencies
+yay, fakeroot, notify-send
+
+# License
+MIT
