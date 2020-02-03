@@ -1,16 +1,77 @@
-#!/bin/bash
-function exitnotif(){ sudo -u "${username}" DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 notify-send -t 299000 'Arch Update Tracker' "${1}"; exit; }
+#!/usr/bin/env bash
+# requires https://github.com/vlevit/notify-send.sh
+set -Eeuo pipefail
 
-username='blackcat'
-dbpath=/var/lib/pacman
-[[ -d "${dbpath}" ]] || exitnotif "${dbpath} not found"
-tmpdb="$(find /dev/shm/ -type l -lname "${dbpath}/local" -printf '%h' -quit)"
+export DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+TERMINAL=xfce4-terminal
+PRGLOC=${0}
+DBPATH=/var/lib/pacman
+REPLID=/tmp/check-updates.pid
+PROMPT=false
 
-[[ ! -w "${tmpdb}" ]] && {
-	tmpdb="$(mktemp -d -p /dev/shm/)" || exitnotif 'Could not create tmp folder'
-	ln -s "${dbpath}/local" "${tmpdb}" || exitnotif "Could not link ${tmpdb} to ${dbpath}/local"
+for dep in notify-send.sh yay fakeroot ${PRGLOC} ${TERMINAL}; do
+	[[ -x $(command -v -- "${dep}") ]]
+done
+
+ERRLOG=$(mktemp)
+exec 2>"${ERRLOG}"
+trap 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
+
+function notify(){
+	local msg=${1} promptupgrade=()
+	${PROMPT} && promptupgrade=(-o "upgrade:${TERMINAL} -e '${PRGLOC} --upgrade'")
+	exec notify-send.sh -t 1000000 -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
 }
 
-fakeroot -- yay -Syyb "${tmpdb}" --logfile /dev/null &>/dev/null
-updates="$(yay -Qub "${tmpdb}" 2>/dev/null)" || exitnotif "${tmpdb} database has an issue"
-[[ -n "$updates" ]] && exitnotif "${updates}"
+function error_check(){
+	local rc=${1} line=${2}
+	reason=$(<"${ERRLOG}")
+	rm -f -- "${ERRLOG}"
+	((rc == 0)) && exit 0
+	notify "${reason}\\nline: ${line}\\nrc: ${rc}"
+}
+
+function list_updates(){
+	local updates tmpdb=${1}
+	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
+	updates=$(yay -Qub "${tmpdb}")
+	[[ -z ${updates} ]] && exit 0
+	PROMPT=true
+	notify "${updates}"
+}
+
+function update_db(){
+	local tmpdb paclocal=${DBPATH}/local ramdir=/dev/shm/
+	[[ -d ${paclocal} && -d ${ramdir} ]]
+
+	tmpdb=$(find "${ramdir}" -type l -lname "${paclocal}" -printf '%h' -quit)
+	if [[ ! -w ${tmpdb} ]]; then
+		tmpdb=$(mktemp -d -p "${ramdir}")
+		ln -s -- "${paclocal}" "${tmpdb}"
+	fi
+
+	list_updates "${tmpdb}"
+}
+
+function upgrade_sys(){
+	exec 2>&1
+	trap - EXIT ERR
+	set -x +Eeuo pipefail
+	yay -Syyu
+	mapfile -t rmpkgs < <(yay -Qdtq)
+	yay -Rns "${rmpkgs[@]}"
+	printf 'y\ny\ny\n' | yay -Scc
+	yay -Ps
+	# optionally get avg-audit here: https://github.com/i34/avg-audit
+	# avg-audit -f packages,severity,type,affected,name
+	exec /bin/bash
+}
+
+while(($# > 0)); do
+	case ${1} in
+		-u | --upgrade) upgrade_sys; shift; ;;
+		*) exit ;;
+	esac
+done
+
+update_db
