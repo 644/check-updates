@@ -2,6 +2,8 @@
 # requires https://github.com/vlevit/notify-send.sh
 set -Eeuo pipefail
 
+ERRLOG=$(mktemp)
+PROMPT=false
 declare -xr DISPLAY=:0
 declare -xr DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 declare -r TERMINAL=xfce4-terminal
@@ -9,9 +11,8 @@ declare -r PRGLOC=${0}
 declare -r DBPATH=/var/lib/pacman
 declare -r REPLID=/tmp/check-updates.pid
 declare -r TIMEOUT=1000000
-declare -r ERRLOG=$(mktemp)
+declare -r ERRLOG
 
-PROMPT=false
 
 for dep in notify-send.sh yay fakeroot ${PRGLOC} ${TERMINAL}; do
 	[[ -x $(command -v -- "${dep}") ]]
@@ -21,18 +22,18 @@ exec 2>"${ERRLOG}"
 trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
 
 function notify(){
-	local msg=${1}
-	local promptupgrade=()
+	declare -r msg=${1}
+	declare -a promptupgrade=()
 
+	rm -f -- "${ERRLOG}"
 	${PROMPT} && promptupgrade=(-o "upgrade:${TERMINAL} -e '${PRGLOC} --upgrade'")
-
 	exec -- notify-send.sh -t "${TIMEOUT}" -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
 }
 
 function error_check(){
-	local reason
-	local rc=${1}
-	local line=${2}
+	declare -r rc=${1}
+	declare -r line=${2}
+	declare reason
 
 	reason=$(<"${ERRLOG}")
 	rm -f -- "${ERRLOG}"
@@ -41,10 +42,10 @@ function error_check(){
 }
 
 function update_db(){
-	local updates
-	local tmpdb
-	local paclocal=${DBPATH}/local
-	local ramdir=/dev/shm/
+	declare -r paclocal=${DBPATH}/local
+	declare -r ramdir=/dev/shm/
+	declare updates
+	declare tmpdb
 
 	[[ -d ${paclocal} && -r ${paclocal} ]]
 	[[ -d ${ramdir} && -w ${ramdir} ]]
@@ -64,12 +65,13 @@ function update_db(){
 }
 
 function upgrade_sys(){
+	declare -r color='\e[91m\e[1m::\e[0m \e[1m'
+	declare -r esc='\e[0m'
+
+	rm -f -- "${ERRLOG}"
 	exec 2>&1
 	trap - EXIT ERR
 	set +Eeuo pipefail
-
-	local esc='\e[0m'
-	local color='\e[91m\e[1m::\e[0m \e[1m'
 
 	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
 	yay -Syyu
