@@ -30,6 +30,7 @@ function notify(){
 }
 
 function error_check(){
+	local reason
 	local rc=${1}
 	local line=${2}
 
@@ -83,7 +84,7 @@ function upgrade_sys(){
 	printf '\nDone.\n\n%bRunning yay -Ps%b\n' "${color}" "${esc}"
 	yay -Ps
 
-	printf '\n%bRunning avg-audit%b\n' "${color}" "${esc}"
+# 	printf '\n%bRunning avg-audit%b\n' "${color}" "${esc}"
 # 	optionally get avg-audit here: https://github.com/i34/avg-audit
 # 	avg-audit -f packages,severity,type,affected,name
 
