@@ -12,9 +12,9 @@ declare -r DBPATH=/var/lib/pacman
 declare -r REPLID=/tmp/check-updates.pid
 declare -r TIMEOUT=1000000
 declare -r ERRLOG
-declare -ar deps=(notify-send.sh yay fakeroot "${PRGLOC}" "${TERMINAL}")
+declare -ar DEPENDS=(notify-send.sh yay fakeroot "${PRGLOC}" "${TERMINAL}")
 
-for dep in "${deps[@]}"; do [[ -x $(command -v -- "${dep}") ]]; done
+for dep in "${DEPENDS[@]}"; do [[ -x $(command -v -- "${dep}") ]]; done
 
 exec 2>"${ERRLOG}"
 trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
@@ -65,6 +65,7 @@ function update_db(){
 function upgrade_sys(){
 	declare -r color='\e[91m\e[1m::\e[0m \e[1m'
 	declare -r esc='\e[0m'
+	declare -a rmdeps
 
 	rm -f -- "${ERRLOG}"
 	exec 2>&1
@@ -74,8 +75,9 @@ function upgrade_sys(){
 	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
 	yay -Syyu
 
-	printf '\n%bRunning yay -Rns < <(yay -Qdtq)%b\n' "${color}" "${esc}"
-	yay -Rns < <(yay -Qdtq) 2>/dev/null || printf 'Nothing to do.\n'
+	printf '\n%bRunning yay -Rns for rmdeps%b\n' "${color}" "${esc}"
+	mapfile -t rmdeps < <(yay -Qdtq)
+	yay -Rns -- "${rmdeps[@]}" || printf 'Nothing to do.\n'
 
 	printf '\n%bRunning yay -Scc%b' "${color}" "${esc}"
 	printf 'y\ny\ny\n' | yay -Scc &>/dev/null
