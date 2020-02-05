@@ -12,10 +12,9 @@ declare -r DBPATH=/var/lib/pacman
 declare -r REPLID=/tmp/check-updates.pid
 declare -r TIMEOUT=1000000
 declare -r ERRLOG
+declare -ar deps=(notify-send.sh yay fakeroot "${PRGLOC}" "${TERMINAL}")
 
-for dep in notify-send.sh yay fakeroot "${PRGLOC}" "${TERMINAL}"; do
-	[[ -x $(command -v -- "${dep}") ]]
-done
+for dep in "${deps[@]}"; do [[ -x $(command -v -- "${dep}") ]]; done
 
 exec 2>"${ERRLOG}"
 trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
