@@ -69,8 +69,8 @@ function upgrade_sys(){
 	trap - EXIT ERR
 	set +Eeuo pipefail
 
-	esc='\e[0m'
-	color='\e[91m\e[1m::\e[0m \e[1m'
+	local esc='\e[0m'
+	local color='\e[91m\e[1m::\e[0m \e[1m'
 
 	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
 	yay -Syyu
