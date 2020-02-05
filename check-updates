@@ -13,8 +13,7 @@ declare -r REPLID=/tmp/check-updates.pid
 declare -r TIMEOUT=1000000
 declare -r ERRLOG
 
-
-for dep in notify-send.sh yay fakeroot ${PRGLOC} ${TERMINAL}; do
+for dep in notify-send.sh yay fakeroot "${PRGLOC}" "${TERMINAL}"; do
 	[[ -x $(command -v -- "${dep}") ]]
 done
 
