@@ -2,68 +2,91 @@
 # requires https://github.com/vlevit/notify-send.sh
 set -Eeuo pipefail
 
-export DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
-TERMINAL=xfce4-terminal
-PRGLOC=${0}
-DBPATH=/var/lib/pacman
-REPLID=/tmp/check-updates.pid
+export DISPLAY=:0
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+readonly TERMINAL=xfce4-terminal
+readonly PRGLOC=${0}
+readonly DBPATH=/var/lib/pacman
+readonly REPLID=/tmp/check-updates.pid
+readonly TIMEOUT=1000000
+
 PROMPT=false
 
 for dep in notify-send.sh yay fakeroot ${PRGLOC} ${TERMINAL}; do
 	[[ -x $(command -v -- "${dep}") ]]
 done
 
-ERRLOG=$(mktemp)
+readonly ERRLOG=$(mktemp)
 exec 2>"${ERRLOG}"
-trap 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
+trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
 
 function notify(){
-	local msg=${1} promptupgrade=()
+	local msg=${1}
+	local promptupgrade=()
+
 	${PROMPT} && promptupgrade=(-o "upgrade:${TERMINAL} -e '${PRGLOC} --upgrade'")
-	exec notify-send.sh -t 1000000 -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
+
+	exec -- notify-send.sh -t "${TIMEOUT}" -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
 }
 
 function error_check(){
-	local rc=${1} line=${2}
+	local rc=${1}
+	local line=${2}
+
 	reason=$(<"${ERRLOG}")
 	rm -f -- "${ERRLOG}"
+
 	((rc == 0)) && exit 0
 	notify "${reason}\\nline: ${line}\\nrc: ${rc}"
 }
 
-function list_updates(){
-	local updates tmpdb=${1}
-	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
-	updates=$(yay -Qub "${tmpdb}")
-	[[ -z ${updates} ]] && exit 0
-	PROMPT=true
-	notify "${updates}"
-}
-
 function update_db(){
-	local tmpdb paclocal=${DBPATH}/local ramdir=/dev/shm/
-	[[ -d ${paclocal} && -d ${ramdir} ]]
+	local updates
+	local tmpdb
+	local paclocal=${DBPATH}/local
+	local ramdir=/dev/shm/
 
-	tmpdb=$(find "${ramdir}" -type l -lname "${paclocal}" -printf '%h' -quit)
-	if [[ ! -w ${tmpdb} ]]; then
-		tmpdb=$(mktemp -d -p "${ramdir}")
+	[[ -d ${paclocal} && -r ${paclocal} ]]
+	[[ -d ${ramdir} && -w ${ramdir} ]]
+
+	tmpdb=$(find "${ramdir}" -type l -lname "${paclocal}" -printf '%h' -quit) || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+
+	if [[ -z ${tmpdb} || ! -w ${tmpdb} ]]; then
+		tmpdb=$(mktemp -d -p "${ramdir}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
 		ln -s -- "${paclocal}" "${tmpdb}"
 	fi
 
-	list_updates "${tmpdb}"
+	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
+	updates=$(yay -Qub "${tmpdb}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+	[[ -z ${updates} ]] && exit 0
+
+	PROMPT=true notify "${updates}"
 }
 
 function upgrade_sys(){
 	exec 2>&1
 	trap - EXIT ERR
-	set -x +Eeuo pipefail
+	set +Eeuo pipefail
+
+	esc='\e[0m'
+	color='\e[91m\e[1m::\e[0m \e[1m'
+
+	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
 	yay -Syyu
-	mapfile -t rmpkgs < <(yay -Qdtq)
-	yay -Rns "${rmpkgs[@]}"
-	printf 'y\ny\ny\n' | yay -Scc
+
+	printf '\n%bRunning yay -Rns < <(yay -Qdtq)%b\n' "${color}" "${esc}"
+	yay -Rns < <(yay -Qdtq) 2>/dev/null || printf 'Nothing to do.\n'
+
+	printf '\n%bRunning yay -Scc%b' "${color}" "${esc}"
+	printf 'y\ny\ny\n' | yay -Scc &>/dev/null
+
+	printf '\nDone.\n\n%bRunning yay -Ps%b\n' "${color}" "${esc}"
 	yay -Ps
-	# optionally get avg-audit here: https://github.com/i34/avg-audit
-	# avg-audit -f packages,severity,type,affected,name
+
+	printf '\n%bRunning avg-audit%b\n' "${color}" "${esc}"
+# 	optionally get avg-audit here: https://github.com/i34/avg-audit
+# 	avg-audit -f packages,severity,type,affected,name
+
 	exec /bin/bash
 }
 
