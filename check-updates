@@ -66,6 +66,7 @@ function upgrade_sys(){
 	declare -r color='\e[91m\e[1m::\e[0m \e[1m'
 	declare -r esc='\e[0m'
 	declare -a rmdeps
+	declare -r kname='linux'
 
 	rm -f -- "${ERRLOG}"
 	exec 2>&1
@@ -85,9 +86,20 @@ function upgrade_sys(){
 	printf '\nDone.\n\n%bRunning yay -Ps%b\n' "${color}" "${esc}"
 	yay -Ps
 
-# 	optionally get avg-audit here: https://github.com/i34/avg-audit
+# 	optionally get avg-audit here: https://github.com/644/avg-audit
 # 	printf '\n%bRunning avg-audit%b\n' "${color}" "${esc}"
 # 	avg-audit -f packages,severity,type,affected,name
+
+	runv=$(uname -r)
+	runv=${runv//./-}
+
+	insv=$(yay -Q -- "${kname}")
+	insv=${insv##* }
+	insv=${insv//./-}
+
+	declare -r runv insv
+
+	[[ "${runv}" != "${insv}" ]] && printf '\nReboot required!\n'
 
 	exec /bin/bash
 }
