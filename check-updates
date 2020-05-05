@@ -41,6 +41,7 @@ notify() {
 upgrade_sys() {
 	declare -r -- color='\e[91m\e[1m::\e[0m \e[1m'
 	declare -r -- esc='\e[0m'
+	declare -a -- rmdeps=()
 
 	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
 	yay -Syyu
@@ -64,8 +65,8 @@ upgrade_sys() {
 }
 
 update_db() {
-	declare -r -- paclocal=${DBPATH}/local
-	declare -r -- ramdir=/dev/shm/
+	declare -r -- paclocal="${DBPATH}/local"
+	declare -r -- ramdir='/dev/shm/'
 	declare -- updates
 	declare -- tmpdb
 
@@ -103,6 +104,6 @@ printf '%d' "$$" >"${PIDFILE}"
 set -Eeuo pipefail
 ERRLOG=$(mktemp)
 exec 2>"${ERRLOG}"
-trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' ERR 1 2 3 6 13 14 15
+trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' ERR 0 1 2 3 6 13 14 15
 
 update_db
