@@ -1,77 +1,46 @@
 #!/usr/bin/env bash
 # requires https://github.com/vlevit/notify-send.sh
-set -Eeuo pipefail
+case "${BASH_VERSION}" in ''|[123].*) printf 'Bash 4.0+ required' >&2; exit 1; ;; esac
 
-ERRLOG=$(mktemp)
-PROMPT=false
-declare -xr DISPLAY=:0
-declare -xr DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
-declare -r TERMINAL=xfce4-terminal
-declare -r PRGLOC=${0}
-declare -r DBPATH=/var/lib/pacman
-declare -r REPLID=/tmp/check-updates.pid
-declare -r TIMEOUT=1000000
-declare -r ERRLOG
-declare -ar DEPENDS=(notify-send.sh yay fakeroot "${PRGLOC}" "${TERMINAL}")
+declare -r -- PRGLOC=${0}
+declare -r -- TERMINAL='xfce4-terminal'
+declare -ar -- DEPENDS=("${PRGLOC}" "${TERMINAL}" 'notify-send.sh' 'yay' 'fakeroot' 'mktemp' 'rm' 'ln' 'mkdir' 'find')
+declare -r -- LOCKDIR='/tmp/check-updates.lock'
+declare -r -- PIDFILE="${LOCKDIR}/PID"
+declare -i -- OLDPID
+declare -xr -- DISPLAY=':0'
+declare -xr -- DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/1000/bus'
+declare -r -- DBPATH='/var/lib/pacman'
+declare -r -- REPLID='/tmp/check-updates.pid'
+declare -r -- TIMEOUT=1000000
+declare -- PROMPT=false
+declare -- ERRLOG
 
-for dep in "${DEPENDS[@]}"; do [[ -x $(command -v -- "${dep}") ]]; done
-
-exec 2>"${ERRLOG}"
-trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' EXIT ERR
-
-function notify(){
-	declare -r msg=${1}
-	declare -a promptupgrade=()
-
-	rm -f -- "${ERRLOG}"
-	${PROMPT} && promptupgrade=(-o "upgrade:${TERMINAL} -e '${PRGLOC} --upgrade'")
-	exec -- notify-send.sh -t "${TIMEOUT}" -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
-}
-
-function error_check(){
-	declare -r rc=${1}
-	declare -r line=${2}
-	declare reason
+error_check() {
+	declare -r -- rc=${1}
+	declare -r -- line=${2}
+	declare -- reason
 
 	reason=$(<"${ERRLOG}")
 	rm -f -- "${ERRLOG}"
+	rm -rf -- "${LOCKDIR}"
 
 	((rc == 0)) || notify "${reason}\\nline: ${line}\\nrc: ${rc}"
 }
 
-function update_db(){
-	declare -r paclocal=${DBPATH}/local
-	declare -r ramdir=/dev/shm/
-	declare updates
-	declare tmpdb
-
-	[[ -d ${paclocal} && -r ${paclocal} ]]
-	[[ -d ${ramdir} && -w ${ramdir} ]]
-
-	tmpdb=$(find "${ramdir}" -type l -lname "${paclocal}" -printf '%h' -quit) || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
-
-	if [[ -z ${tmpdb} || ! -w ${tmpdb} ]]; then
-		tmpdb=$(mktemp -d -p "${ramdir}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
-		ln -s -- "${paclocal}" "${tmpdb}"
-	fi
-
-	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
-	updates=$(yay -Qub "${tmpdb}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
-	[[ -z ${updates} ]] && exit 0
-
-	PROMPT=true notify "${updates}"
-}
-
-function upgrade_sys(){
-	declare -r color='\e[91m\e[1m::\e[0m \e[1m'
-	declare -r esc='\e[0m'
-	declare -a rmdeps
-	declare -r kname='linux'
+notify() {
+	declare -r -- msg=${1}
+	declare -a -- promptupgrade=()
 
 	rm -f -- "${ERRLOG}"
-	exec 2>&1
-	trap - EXIT ERR
-	set +Eeuo pipefail
+	rm -rf -- "${LOCKDIR}"
+	${PROMPT} && promptupgrade=(-o "upgrade:${TERMINAL} -e '${PRGLOC} --upgrade'")
+	exec -- notify-send.sh -t "${TIMEOUT}" -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
+}
+
+upgrade_sys() {
+	declare -r -- color='\e[91m\e[1m::\e[0m \e[1m'
+	declare -r -- esc='\e[0m'
 
 	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
 	yay -Syyu
@@ -90,25 +59,50 @@ function upgrade_sys(){
 # 	printf '\n%bRunning avg-audit%b\n' "${color}" "${esc}"
 # 	avg-audit -f packages,severity,type,affected,name
 
-	runv=$(uname -r)
-	runv=${runv//./-}
-
-	insv=$(yay -Q -- "${kname}")
-	insv=${insv##* }
-	insv=${insv//./-}
-
-	declare -r runv insv
-
-	[[ "${runv}" != "${insv}" ]] && printf '\nReboot required!\n'
-
-	exec /bin/bash
+	read -r -n 1 -p 'Done. Press any key to exit.'
+	exit 0
 }
 
-while(($# > 0)); do
-	case ${1} in
-		-u | --upgrade) upgrade_sys; shift; ;;
-		*) exit ;;
-	esac
-done
+update_db() {
+	declare -r -- paclocal=${DBPATH}/local
+	declare -r -- ramdir=/dev/shm/
+	declare -- updates
+	declare -- tmpdb
+
+	[[ -d ${paclocal} && -r ${paclocal} ]]
+	[[ -d ${ramdir} && -w ${ramdir} ]]
+
+	tmpdb=$(find "${ramdir}" -type l -lname "${paclocal}" -printf '%h' -quit) || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+
+	if [[ -z ${tmpdb} || ! -w ${tmpdb} ]]; then
+		tmpdb=$(mktemp -d -p "${ramdir}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+		ln -s -- "${paclocal}" "${tmpdb}"
+	fi
+
+	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
+	updates=$(yay -Qub "${tmpdb}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+	[[ -z ${updates} ]] && exit 0
+
+	PROMPT=true notify "${updates}"
+}
+
+hash -- "${DEPENDS[@]}" || exit
+
+mkdir "${LOCKDIR}" &>/dev/null || {
+	OLDPID=$(<"${PIDFILE}") || exit
+	kill -0 -- "${OLDPID}" &>/dev/null && exit
+	rm -rf -- "${LOCKDIR}"
+	exec -- "${PRGLOC}" "$@"
+}
+
+trap -- 'rm -rf -- "${LOCKDIR}"' 0
+printf '%d' "$$" >"${PIDFILE}"
+
+[[ ${1} == '--upgrade' ]] && upgrade_sys
+
+set -Eeuo pipefail
+ERRLOG=$(mktemp)
+exec 2>"${ERRLOG}"
+trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' ERR 1 2 3 6 13 14 15
 
 update_db
