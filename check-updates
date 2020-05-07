@@ -67,7 +67,8 @@ upgrade_sys() {
 update_db() {
 	declare -r -- paclocal="${DBPATH}/local"
 	declare -r -- ramdir='/dev/shm/'
-	declare -- updates
+	declare -i -- update_count
+	declare -a -- updates
 	declare -- tmpdb
 
 	[[ -d ${paclocal} && -r ${paclocal} ]]
@@ -81,10 +82,11 @@ update_db() {
 	fi
 
 	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
-	updates=$(yay -Qub "${tmpdb}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
-	[[ -z ${updates} ]] && exit 0
+	mapfile updates < <(yay --sudo fakeroot -Qub "${tmpdb}")  || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+	((update_count=${#updates[@]})) || exit 0
+	((update_count > 20)) && updates=("${update_count} updates available.")
 
-	PROMPT=true notify "${updates}"
+	PROMPT=true notify "${updates[*]}"
 }
 
 hash -- "${DEPENDS[@]}" || exit
