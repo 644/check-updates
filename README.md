@@ -1,19 +1,28 @@
-# Description
-This script is a bash replacement for aarchup - an update checking daemon with notifications. It will write the database to RAM to save on HDD/SSD write cycles. The idea is because it resyncs the database so frequently, writing directly to the disk constantly could easily shorten its lifetime.
+# About
+This script is a bash alternative of aarchup - an update checking daemon with notifications. It will write the database to RAM to save on HDD/SSD write cycles. The idea is because it resyncs the database so frequently, writing directly to the disk constantly could shorten its lifetime.
 
-It doesn't require root priveleges, can replace notifications, and even offers a way to upgrade the system by clicking a button on the notification itself.
+It doesn't require root priveleges, and will prompt to update with xterm and dialog if any are found. You can press <kbd>y</kbd>, <kbd>LeftArrow-Enter</kbd> or double click the "Yes" box to begin updating. If you don't want to update just press <kbd>Enter</kbd>, <kbd>n</kbd> or <kbd>Esc</kbd> twice.
 
-# Installation
-Just download and add the script to a normal user's cronjob (cronie), and configure the settings in the script (mainly the TERMINAL=xfce4-terminal) as everything else is *probably* the defaults.
-
-An example cronjob would look like
+# Install
+```bash
+wget https://raw.githubusercontent.com/644/check-updates/master/check-updates
+sudo install -m 0755 check-updates /usr/local/bin/
 ```
-PATH= # do echo "$PATH" in your terminal and add it here
-*/5 * * * * /home/user/bin/check-updates
+
+Then add the script to a normal user's cronjob (cronie) with ```crontab -e```
+
+Example cron script
+```
+PATH=/bin:/usr/bin:/usr/local/bin
+*/15 * * * * check-updates
 ```
 
 # Dependencies
-yay, fakeroot, notify-send.sh (https://github.com/vlevit/notify-send.sh)
+- yay
+- fakeroot
+- notify-send
+- dialog (probably installed)
+- xterm (probably installed)
 
 # License
 MIT
