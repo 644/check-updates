@@ -1,111 +1,123 @@
 #!/usr/bin/env bash
-# requires https://github.com/vlevit/notify-send.sh
-case "${BASH_VERSION}" in ''|[123].*) printf 'Bash 4.0+ required' >&2; exit 1; ;; esac
+case "${BASH_VERSION}" in ''|[123].*) printf 'Bash 4.0+ required\n' >&2; exit 1; ;; esac
 
-declare -r -- PRGLOC=${0}
-declare -r -- TERMINAL='xfce4-terminal'
-declare -ar -- DEPENDS=("${PRGLOC}" "${TERMINAL}" 'notify-send.sh' 'yay' 'fakeroot' 'mktemp' 'rm' 'ln' 'mkdir' 'find')
-declare -r -- LOCKDIR='/tmp/check-updates.lock'
-declare -r -- PIDFILE="${LOCKDIR}/PID"
-declare -i -- OLDPID
+# Global variables, resetting the path for security
+declare -xr PATH=$(command -p getconf PATH)
+declare -ar -- DEPENDS=('xterm' 'notify-send' 'dialog' 'yay' 'fakeroot' 'mktemp' 'rm' 'ln' 'mkdir' 'find' 'flock')
+declare -r -- LOCKFILE='/tmp/check-updates.lock'
+declare -r -- LOCKFD=99
 declare -xr -- DISPLAY=':0'
 declare -xr -- DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/1000/bus'
 declare -r -- DBPATH='/var/lib/pacman'
-declare -r -- REPLID='/tmp/check-updates.pid'
 declare -r -- TIMEOUT=1000000
-declare -- PROMPT=false
 declare -- ERRLOG
 
-error_check() {
+error_check(){
+	# Unset the bash options in case another error occurs during error handling
+	set +Eefuo pipefail
+	trap _rm_lock ERR SIGPIPE 1 2 3 6 14 15
+
 	declare -r -- rc=${1}
-	declare -r -- line=${2}
 	declare -- reason
 
 	reason=$(<"${ERRLOG}")
-	rm -f -- "${ERRLOG}"
-	rm -rf -- "${LOCKDIR}"
 
-	((rc == 0)) || notify "${reason}\\nline: ${line}\\nrc: ${rc}"
+	# Only notify if an error occurs
+	((rc == 0)) || { notify-send -t "${TIMEOUT}" -- 'Arch Update Tracker' "${1@Q}\\n${reason@Q}"; exit 0; }
 }
 
-notify() {
-	declare -r -- msg=${1}
-	declare -a -- promptupgrade=()
+update_sys(){
+	# Securely get the update count and update list in local variables
+	declare -r -- udc=${1}
+	declare -x -- msg
+	shift
+	printf -v msg -- "%s" "${@}"
+	
+	declare -xr -- color='\e[91m\e[1m::\e[0m \e[1m'
+	declare -xr -- esc='\e[0m'
+	declare -xa -- rmdeps=()
 
-	rm -f -- "${ERRLOG}"
-	rm -rf -- "${LOCKDIR}"
-	${PROMPT} && promptupgrade=(-o "upgrade:${TERMINAL} -e '${PRGLOC} --upgrade'")
-	exec -- notify-send.sh -t "${TIMEOUT}" -R "${REPLID}" "${promptupgrade[@]}" -- 'Arch Update Tracker' "${msg}"
-}
-
-upgrade_sys() {
-	declare -r -- color='\e[91m\e[1m::\e[0m \e[1m'
-	declare -r -- esc='\e[0m'
-	declare -a -- rmdeps=()
-
-	printf '%bRunning yay -Syyu%b\n' "${color}" "${esc}"
+	# Securely open xterm with the update list and count, and prompt to update
+	xterm -fa 'Monospace' -fs 9 -geometry 80x16-1 -xrm 'XTerm.vt100.allowTitleOps: false' -T "${udc} updates available" \
+	-e 'dialog --title "Update system?" --clear --defaultno --yesno "${msg}" 12 70 || exit 0
+	printf '\''\033c%bRunning yay -Syyu%b\n'\'' "${color}" "${esc}"
 	yay -Syyu
 
-	printf '\n%bRunning yay -Rns for rmdeps%b\n' "${color}" "${esc}"
+	printf '\''\n%bRunning yay -Rns for rmdeps%b\n'\'' "${color}" "${esc}"
 	mapfile -t rmdeps < <(yay -Qdtq)
-	yay -Rns -- "${rmdeps[@]}" || printf 'Nothing to do.\n'
+	yay -Rns -- "${rmdeps[@]}" || printf '\''Nothing to do.\n'\''
 
-	printf '\n%bRunning yay -Scc%b' "${color}" "${esc}"
-	printf 'y\ny\ny\n' | yay -Scc &>/dev/null
+	printf '\''\n%bRunning yay -Scc%b'\'' "${color}" "${esc}"
+	printf '\''y\ny\ny\n'\'' | yay -Scc &>/dev/null
 
-	printf '\nDone.\n\n%bRunning yay -Ps%b\n' "${color}" "${esc}"
+	printf '\''\nDone.\n\n%bRunning yay -Ps%b\n'\'' "${color}" "${esc}"
 	yay -Ps
 
-# 	optionally get avg-audit here: https://github.com/644/avg-audit
-# 	printf '\n%bRunning avg-audit%b\n' "${color}" "${esc}"
-# 	avg-audit -f packages,severity,type,affected,name
+	printf '\''\n%bRunning avg-audit%b\n'\'' "${color}" "${esc}"
+	/usr/local/bin/avg-audit
 
-	read -r -n 1 -p 'Done. Press any key to exit.'
-	exit 0
+	read -r -n 1 -p "Done. Press any key to exit."'
 }
 
-update_db() {
+update_db(){
 	declare -r -- paclocal="${DBPATH}/local"
 	declare -r -- ramdir='/dev/shm/'
 	declare -i -- update_count
 	declare -a -- updates
 	declare -- tmpdb
 
+	# Exits if $paclocal is not a directory/readable
+	# Or if $ramdir is not a directory/writable
 	[[ -d ${paclocal} && -r ${paclocal} ]]
 	[[ -d ${ramdir} && -w ${ramdir} ]]
 
+	# Finds the first symbolic link to $paclocal in $ramdir to locate
+	# the temporary database made by this script
 	tmpdb=$(find "${ramdir}" -type l -lname "${paclocal}" -printf '%h' -quit) || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
 
+	# Creates a new temporary database in /dev/shm if none are found or writable
 	if [[ -z ${tmpdb} || ! -w ${tmpdb} ]]; then
 		tmpdb=$(mktemp -d -p "${ramdir}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
 		ln -s -- "${paclocal}" "${tmpdb}"
 	fi
 
-	yay --sudo fakeroot -Syyb "${tmpdb}" >/dev/null
-	mapfile updates < <(yay --sudo fakeroot -Qub "${tmpdb}")  || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
+	# Checks for updates with yay and notifies if any are available
+	yay --sudo fakeroot -Syb "${tmpdb}" >/dev/null
+	mapfile updates < <(yay --sudo fakeroot -Qub "${tmpdb}") || { printf 'real line: %q' "${LINENO}" >&2; exit 1; }
 	((update_count=${#updates[@]})) || exit 0
-	((update_count > 20)) && updates=("${update_count} updates available.")
 
-	PROMPT=true notify "${updates[*]}"
+	update_sys "${update_count}" "${updates[@]}"
 }
 
-hash -- "${DEPENDS[@]}" || exit
-
-mkdir "${LOCKDIR}" &>/dev/null || {
-	OLDPID=$(<"${PIDFILE}") || exit
-	kill -0 -- "${OLDPID}" &>/dev/null && exit
-	rm -rf -- "${LOCKDIR}"
-	exec -- "${PRGLOC}" "$@"
+_rm_lock(){
+	# Removing the lockfile and error log. Runs at the very end.
+	flock -u "${LOCKFD}"
+	flock -xn "${LOCKFD}" && rm -f -- "${LOCKFILE}"
+	[[ -f "${ERRLOG}" ]] && rm -f -- "${ERRLOG}"
 }
 
-trap -- 'rm -rf -- "${LOCKDIR}"' 0
-printf '%d' "$$" >"${PIDFILE}"
+_mk_lock(){
+	# Creates an exclusive lock to prevent the script running more than one instance
+	exec 99>"${LOCKFILE}"
+	trap _rm_lock 0
+	flock -xn "${LOCKFD}" || exit 1
+}
 
-[[ ${1} == '--upgrade' ]] && upgrade_sys
+# Remove remembered locations from hash, and test the dependencies
+hash -r
+hash -- "${DEPENDS[@]}" || exit 1
 
-set -Eeuo pipefail
-ERRLOG=$(mktemp)
-exec 2>"${ERRLOG}"
-trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' ERR 0 1 2 3 6 13 14 15
+_mk_lock
+
+# Set bash options that will provide better error handling and security
+# -e exit if any command fails
+# -f disables pathname expansion
+# -u cause an error if any variables are unset (will cause script to exit with -e)
+# -o pipefail cause an error if any commands fail in the pipelines (usually only the last command will return an error)
+set -Eefuo pipefail
+ERRLOG=$(mktemp) || exit 0
+# Redirect stderr to the error log
+exec 2>"${ERRLOG}" || exit 0
+trap -- 'rc=$?; error_check "${rc}" "${LINENO}"' ERR SIGPIPE 1 2 3 6 14 15
 
 update_db
