@@ -53,10 +53,11 @@ update_sys(){
 	printf '\''\nDone.\n\n%bRunning yay -Ps%b\n'\'' "${color}" "${esc}"
 	yay -Ps
 
-	printf '\''\n%bRunning avg-audit%b\n'\'' "${color}" "${esc}"
-	/usr/local/bin/avg-audit
-
 	read -r -n 1 -p "Done. Press any key to exit."'
+	
+	# Optionally get https://github.com/644/avg-audit and add these lines into the code block above
+	# printf '\''\n%bRunning avg-audit%b\n'\'' "${color}" "${esc}"
+	# avg-audit
 }
 
 update_db(){
