@@ -11,7 +11,7 @@ sudo install -m 0755 check-updates /usr/local/bin/
 
 Then add the script to a normal user's cronjob (cronie) with ```crontab -e```
 
-Example cron script
+Example cron script, runs check-updates every 15 minutes
 ```
 PATH=/bin:/usr/bin:/usr/local/bin
 */15 * * * * check-updates
@@ -21,6 +21,7 @@ PATH=/bin:/usr/bin:/usr/local/bin
 - yay
 - fakeroot
 - notify-send
+- cronie
 - dialog (probably installed)
 - xterm (probably installed)
 
