@@ -3,6 +3,8 @@ This script is a bash alternative of aarchup - an update checking daemon with no
 
 It doesn't require root priveleges, and will prompt to update with xterm and dialog if any are found. You can press <kbd>y</kbd>, <kbd>LeftArrow-Enter</kbd> or double click the "Yes" box to begin updating. If you don't want to update just press <kbd>Enter</kbd>, <kbd>n</kbd> or <kbd>Esc</kbd> twice.
 
+<img src="example.png" alt="Example">
+
 # Install
 ```bash
 wget https://raw.githubusercontent.com/644/check-updates/master/check-updates
